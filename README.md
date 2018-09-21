@@ -7,6 +7,7 @@ vm-balancer is a virtual machine load balancer for KVM hypervisor(w/QEMU & libvi
 -It is capable of efficiently balancing virtual machine loads among up to 8 logical cores(so 4 physical for now)
 -very helpful for managing images that are quickly spun up and destroyed with no persistence; e.g. cloud images. Potentially offers speedup and host memory savings when run against native qemu auto-ballooning and repin drivers.
 
+
 VM CPU BALANCER:
 -the balancer will dynamically repin vcpus for all active vm domains to physical cpus to ensure load balance.
 
