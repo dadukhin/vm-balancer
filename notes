@@ -1,0 +1,16 @@
+in case i need to disable these services
+sudo systemctl enable --now libvirtd.service virtlogd.socket ebtables.service dnsmasq.service
+
+virDomainGetCPUStats: get nth PCPU usage for a particular domain
+
+time spent by each vcpu for a particular domain
+time spent by each pcpu on a particular domain
+
+
+
+ALGO:
+CPU 1 CPU 2
+60%(40,20)   20%(10,10)
+v1,v1, ,v2,v2
+
+10,10,20,40
