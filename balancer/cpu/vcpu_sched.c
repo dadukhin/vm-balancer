@@ -11,7 +11,6 @@
 #define min(x, y) ((x) < (y) ? (x) : (y))
 
 const unsigned long long nano = 1000000000;
-const double thresh = 85;
 
 
 
@@ -160,8 +159,8 @@ int getVCPU_USAGE(unsigned long long * VCPU_ARR, int numDoms, int numcpus, virVc
         }
 }
 
-void getBusFreeCPU(unsigned long long * VCPU_USAGE, virVcpuInfoPtr cur, virDomainStatsRecordPtr *record,
-  int numDoms, int numcpus, int *busfree, unsigned long long *usageTotal, unsigned long long *vcpusPerCPU) {
+void getBusFreeCPU(virDomainPtr * doms, unsigned long long * VCPU_USAGE, virVcpuInfoPtr cur, virDomainStatsRecordPtr *record,
+  int numDoms, int numcpus, int *busfree, unsigned long long *usageTotal, unsigned long long *vcpusPerCPU, unsigned long * domMap) {
 
         //unsigned long long usageTotal[numcpus];
         //unsigned long long vcpusPerCPU[numcpus];
@@ -177,6 +176,8 @@ void getBusFreeCPU(unsigned long long * VCPU_USAGE, virVcpuInfoPtr cur, virDomai
                         usageTotal[cur[i * numcpus + x].cpu]+=VCPU_USAGE[i * numcpus + x];
                   //        printf("CPU: %d adding: %d\n", cur[i * numcpus + x].cpu, VCPU_USAGE[i * numcpus + x]);
                         vcpusPerCPU[cur[i * numcpus + x].cpu]+=1;
+
+                        domMap[cur[i * numcpus + x].cpu * numcpus + x]=i;
                 }
 
         }
@@ -201,7 +202,7 @@ void getBusFreeCPU(unsigned long long * VCPU_USAGE, virVcpuInfoPtr cur, virDomai
                         busiest= (double)usageTotal[i] / (double)vcpusPerCPU[i];
                         busfree[0] = i;
                 } if (((double)usageTotal[i] / (double)vcpusPerCPU[i])< freest) {
-                  printf("FREEST\n");
+                  //printf("FREEST\n");
                         freest= (double)usageTotal[i] / (double)vcpusPerCPU[i];
                         busfree[1] = i;
                 }
@@ -209,7 +210,7 @@ void getBusFreeCPU(unsigned long long * VCPU_USAGE, virVcpuInfoPtr cur, virDomai
 
 }
 
-void getBusFreeVCPU(int cpu, int numcpus, int numDoms, virDomainStatsRecordPtr * record, unsigned long long * VCPU_ARR, virVcpuInfoPtr cur, int* result ) {
+void getBusFreeVCPU(int cpu, int numcpus, int numDoms, virDomainStatsRecordPtr * record, unsigned long long * VCPU_ARR, virVcpuInfoPtr cur, int* result) {
   unsigned long long busiest = 0;
   unsigned long long freest = 100;
 
@@ -219,6 +220,9 @@ void getBusFreeVCPU(int cpu, int numcpus, int numDoms, virDomainStatsRecordPtr *
   for (int i = 0; i < numDoms; i++) {
     int maxvcpus = record[i]->params[0].value.ul;
     for (int x = 0; x < maxvcpus; x++) {
+
+  //    domMap[i * numcpus + x] = doms[i]; //for each cpu, put a ptr to its domain
+
       if (cur[i * numcpus + x].cpu == cpu) {
 
         if (VCPU_ARR[i * numcpus +x] > busiest) {
@@ -370,6 +374,8 @@ main(int argc, char *argv[])
         virVcpuInfoPtr vcpuinfoPrev = calloc(numDoms * numcpus, sizeof(virVcpuInfo));
         virVcpuInfoPtr vcpuinfoCur = calloc(numDoms * numcpus, sizeof(virVcpuInfo));
 
+        unsigned long * VCPU_DOMMAP = calloc(numcpus * numcpus, sizeof(unsigned long));
+
 
         unsigned long long usageTotal[numcpus];
         unsigned long long vcpusPerCPU[numcpus];
@@ -430,7 +436,7 @@ main(int argc, char *argv[])
                 printVCPU_USAGE(VCPU_USAGE, record, numDoms, numcpus);
                 //busfree[0] = busy, busfree[1]=free
                 int busfree[2];
-                getBusFreeCPU(VCPU_USAGE, vcpuinfoCur, record, numDoms, numcpus, busfree,usageTotal, vcpusPerCPU);
+                getBusFreeCPU(doms, VCPU_USAGE, vcpuinfoCur, record, numDoms, numcpus, busfree,usageTotal, vcpusPerCPU, VCPU_DOMMAP);
                 printf("------------------------\n");
                 printf("BUSY: %d, FREE: %d\n", busfree[0], busfree[1]);
                 int BUSY_Vbusfree[4];
@@ -449,16 +455,36 @@ main(int argc, char *argv[])
                   goto cont;
                 }
                 //busiest cpu must be above thresh to do anything also it must have more than 1 vcpu attached to it
+
+                for (int i = 0; i < numcpus; i++) {
+                  if (vcpusPerCPU[i] > 1 && vcpusPerCPU[busfree[1]] == 0) {
+                    unsigned char map = 0x1 << busfree[1];
+                    //take
+                    if(virDomainPinVcpu(doms[VCPU_DOMMAP[i * numcpus + 0]], 0, &map, cpumaplen) == -1) {
+                         printf("pinning failed!\n");
+                         goto cont;
+                    }
+                    printf("PINNED VCPU %d of DOM %d to PCPU %d\n",0,VCPU_DOMMAP[i * numcpus + 0], busfree[1]);
+                    goto cont; //if busiest has more than 1 vcpu and freest has none, then no point in checking other conditions
+                  }
+                }
+
+
                 if (cpuUse(busfree[0], usageTotal, vcpusPerCPU)>50 && vcpusPerCPU[busfree[0]]>1) {
                   /*IF THE FREEST CPU IS EMPTY, just pin heaviest vcpu from busiest cpu to it*/
+        /*          printf("HEREEEE\n");
                   if (vcpusPerCPU[busfree[1]] == 0) {
                     unsigned char map = 0x1 << busfree[1];
                     if(virDomainPinVcpu(doms[BUSY_Vbusfree[2]], BUSY_Vbusfree[0], &map, cpumaplen) == -1) {
                          printf("pinning failed!\n");
+                         goto cont;
                     }
                     printf("PINNED VCPU %d of DOM %d to PCPU %d\n",BUSY_Vbusfree[0],BUSY_Vbusfree[2], busfree[1]);
-                    goto cont;
+                    goto cont; //if busiest has more than 1 vcpu and freest has none, then no point in checking other conditions
                   }
+
+*/
+
 
                   //REST OF ALGO
                   //else we just take smallest vcpu on busiest and switch it with smallest on freest?
@@ -468,13 +494,16 @@ main(int argc, char *argv[])
                   //pin freest cpu to freest vcpu on busiest cpu
                   if(virDomainPinVcpu(doms[BUSY_Vbusfree[3]], BUSY_Vbusfree[1], &map, cpumaplen) == -1) {
                        printf("pinning failed!\n");
+                       goto cont;
                   }
+                  printf("PINNED VCPU %d(freest vcpu on busiest cpu) of DOM %d to PCPU(freest) %d\n",BUSY_Vbusfree[1],BUSY_Vbusfree[3], busfree[1]);
                   map = 0x1 << busfree[0];
                   //pin busiest cpu to freest vcpu on freest cpu
-                  if(virDomainPinVcpu(doms[BUSY_Vbusfree[3]], FREE_Vbusfree[1], &map, cpumaplen) == -1) {
+                  if(virDomainPinVcpu(doms[FREE_Vbusfree[3]], FREE_Vbusfree[1], &map, cpumaplen) == -1) {
                        printf("pinning failed!\n");
+                       goto cont;
                   }
-
+                  printf("PINNED VCPU %d(freest vcpu on freest cpu) of DOM %d to PCPU(busiest) %d\n",FREE_Vbusfree[1],FREE_Vbusfree[3], busfree[0]);
 
 
                 }
@@ -490,182 +519,7 @@ main(int argc, char *argv[])
 
                 goto cont;
 
-
-
-
-
-
-
-
-/*====================UPDATE PCPU TIMES*/
-                getPCPU_TIME(numcpus, numDoms,doms, PCPU_CUR_TIME);
-                //printf("DIFFERENCE: %llu\n", abs(PCPU_PREV_TIME[0]-PCPU_CUR_TIME[0]));
-                double a = usage(abs(PCPU_PREV_TIME[0]-PCPU_CUR_TIME[0]), (unsigned long long)quantum * nano);
-                double b = usage(abs(PCPU_PREV_TIME[1]-PCPU_CUR_TIME[1]), (unsigned long long)quantum * nano);
-                double c = usage(abs(PCPU_PREV_TIME[2]-PCPU_CUR_TIME[2]), (unsigned long long)quantum * nano);
-                //printf("CPU 0 USAGE: %f\n", a);
-                //printf("CPU 1 USAGE: %f\n", b);
-                //printf("CPU 2 USAGE: %f\n", c);
-
-
-
-
-
-/*========================update time of each vcpu*/
-                free(record);
-                virDomainListGetStats(doms,VIR_DOMAIN_STATS_VCPU,&record, 0);
-
-                size_t cpumaplen = VIR_CPU_MAPLEN(numcpus);
-
-
-                for (i = 0; i < numDoms; i++) {
-
-                        unsigned int maxVCPUS = record[i]->params[0].value.ui;
-                        unsigned char * cpumaps = calloc(maxVCPUS, cpumaplen);
-                        virVcpuInfoPtr cpuinfo = calloc(maxVCPUS, sizeof(virVcpuInfo));
-                        virDomainGetVcpus(doms[i],cpuinfo,record[i]->params[0].value.ui, cpumaps, cpumaplen);
-                        //  unsigned int maxVCPUS = record[i]->params[0].value.ui;
-                        int x = 0;
-                        printf("DOMAIN: %d\n", i);
-                        for(x= 0; x < maxVCPUS; x++) {
-                                VCPU_CUR_TIME[i * numcpus + x]=record[i]->params[2+3*x+1].value.ul;
-
-                                /*DEBUG INFORMATION: REMOVE FOR PROD */
-                                double vUsage = usage((VCPU_CUR_TIME[i * numcpus + x]-VCPU_PREV_TIME[i * numcpus + x]),
-                                                      (unsigned long long)quantum * nano);
-                                //printf("FIELD CHECK: %s \n", record[i]->params[2+3*x+1].field);
-                                printf("VCPU: %d usage: %.02f %%\n", x, vUsage );
-                        }
-                        free(cpuinfo);
-                        printf("--------------------------\n");
-
-                }
-
-
-
-
-
-
-/*=====================GET BUSIEST AND LEAST BUSIEST CPUS*/
-                int busiest = 0;
-                int empty = 1;
-                double maxUsage = thresh;
-                int threshes = numcpus;
-                double minUsage = thresh;
-                for(i = 0; i < numcpus; i++ ) {
-                        int active = 1;
-                        if (isCPU_ACTIVE(i, record, numcpus, doms, numDoms)==-1) {
-                                //  printf("INACTIVE PCPU: %d\n", i);
-                                active  = 0;
-                        }
-                        //      printf("ACTIVE PCPU: %d\n", i);
-                        double tmp = usage(abs(PCPU_PREV_TIME[i]-PCPU_CUR_TIME[i]), (unsigned long long)quantum * nano);
-                        printf("CPU %d usage: %f\n", i, tmp);
-                        if (tmp > thresh && active) {
-                                threshes--;
-                        }
-                        if (tmp > maxUsage && active) {
-                                maxUsage = tmp;
-                                busiest = i;
-                                printf("got a max candidate: %d \n", i);
-                        } else if (tmp < minUsage) {
-                                minUsage = tmp;
-                                empty = i;
-                                printf("got a min candidate: %d \n", i);
-                        }
-                }
-                printf("BUSIEST CPU: %d\nLEAST BUSIEST CPU: %d\n", busiest, empty);
-                //printf("how many cpus achieved thresh: %d\n", (numcpus-thresh));
-                if (threshes== 0 || threshes == numcpus || (busiest == empty) || busiest ==-1 || empty == -1) {
-                        goto cont;
-                }
-
-
-/*================FIND LEAST BUSY VCPU ON BUSIEST PCPU AND PIN IT TO LEAST BUSIEST PCPU*/
-                minUsage = 111.0; //min vcpu on busiest
-                double minUsageT = 111.0; //min vcpu on empty
-
-                int leastBusyVcpu = 0;
-                int leastBusyVcpuT = 0;
-
-                virDomainPtr leastBusyVcpuDom = NULL;
-                int domIndex = 0;
-
-                virDomainPtr leastBusyVcpuTDom = NULL;
-                int domTIndex = 0;
-
-
-                for (i =0; i < numDoms; i++) {
-
-                        unsigned int maxVCPUS = record[i]->params[0].value.ui;
-                        virVcpuInfoPtr cpuinfo = calloc(maxVCPUS, sizeof(virVcpuInfo));
-                        size_t cpumaplen = VIR_CPU_MAPLEN(numcpus);
-                        unsigned char * cpumaps = calloc(maxVCPUS, cpumaplen);
-                        virDomainGetVcpus(doms[i],cpuinfo,record[i]->params[0].value.ui, cpumaps, cpumaplen);
-                        //cpumap[vCPU#]=pcpu-1
-                        int x = 0;
-                        for(x = 0; x < maxVCPUS; x++) {
-                                double tmp = usage(abs(VCPU_PREV_TIME[i * numcpus + x]-VCPU_CUR_TIME[i * numcpus + x]), (unsigned long long)quantum * nano);
-                                //  printf("VCPU %d USAGE: %f\n", x, tmp);
-                                if(cpuinfo[x].cpu == busiest && tmp <= minUsage) {
-                                        leastBusyVcpu = x;
-                                        minUsage = tmp;
-                                        leastBusyVcpuDom=doms[i];
-                                        domIndex = i;
-                                        //      printf("WE FOUND A CANDIDATE! \n");
-                                }
-                                else if(cpuinfo[x].cpu == empty && tmp <= minUsageT) {
-                                        leastBusyVcpuT = x;
-                                        minUsageT = tmp;
-                                        //    printf("WE FOUND A CANDIDATE T!\n");
-                                        leastBusyVcpuTDom=doms[i];
-                                        domTIndex = i;
-                                }
-
-                        }
-                        memset(cpuinfo, 0, maxVCPUS * sizeof(virVcpuInfo));
-                        free(cpuinfo);
-                }
-                /*assigning pins */
-                unsigned char tmpMap = 0x1;
-                tmpMap <<= empty;
-
-                //  printf("pin: VCPU: %d -> ",leastBusyVcpu)
-                printf("DOM 1%p ,DOM 2 %p\n",leastBusyVcpuDom, leastBusyVcpuTDom);
-                if(virDomainPinVcpu(leastBusyVcpuDom, leastBusyVcpu, &tmpMap, cpumaplen) == -1) {
-                        printf("pinning failed!\n");
-                        goto cont;
-                }
-                printf("PINNED CPU: %d to VCPU: %d on DOM: %05x\n", empty, leastBusyVcpu, domIndex);
-                tmpMap = 0x1 << busiest;
-                if (leastBusyVcpuTDom != NULL) { //fix this
-                        if(virDomainPinVcpu(leastBusyVcpuTDom, leastBusyVcpuT, &tmpMap, cpumaplen) == -1) {
-                                printf("pinning failed!\n");
-                                goto cont;
-                        }
-                }
-
-//if smallest vcpu is above thresh, don't repin it
-
-                /*decide how to repin AKA main load balancing algo*/
-                /*take busiest cpu's vcpu with the least usage and repin it to the least busiest cpu.
-                   if the least vcpu on the least busiest cpu is larger than its swap, don't repin and do the following:
-                   take busiest cpu's
-                   then, while the least busiest cpu usage+est usage of new vcpu < thresh,
-                 */
-                /*copy and set stuff*/
-
-
-
-                /*
-
-
-
-
-
-
-                 */
-
+//ASK TA about initial affinity/mappings and ask about testcases
 
 
 cont:
@@ -679,6 +533,8 @@ cont:
 
                 free(record);
                 VCPU_STAT_CLEAR_AND_MOVE(numDoms, numcpus, VCPU_USAGE, vcpuinfoPrev, vcpuinfoCur);
+                memset(VCPU_DOMMAP, 0, sizeof(unsigned long) * numcpus * numcpus);
+
 
                 memset(usageTotal, 0, sizeof(unsigned long long ) * numcpus);
                 memset(vcpusPerCPU, 0, sizeof(unsigned long long ) * numcpus);
