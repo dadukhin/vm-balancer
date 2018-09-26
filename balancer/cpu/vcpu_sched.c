@@ -109,7 +109,7 @@ int getVCPU_STATS(virDomainPtr *doms, int numDoms, int numcpus, virVcpuInfoPtr v
                       unsigned int maxvcpus = record[i]->params[0].value.ui;
                       printf("VCPU INFO FOR DOMAIN----- %d\n", i);
                       for (int x = 0; x < maxvcpus; x++) {
-                              printf("VCPU: %llu (logical: %d) PINNED TO: %llu, time: %llu\n", vcpuinfo[numcpus * i + x].number,x,
+                              printf("VCPU: %d (logical: %d) PINNED TO: %d, time: %llu\n", vcpuinfo[numcpus * i + x].number,x,
                                      vcpuinfo[numcpus * i + x].cpu,
                                      vcpuinfo[numcpus * i + x].cpuTime
                                      );
@@ -464,7 +464,7 @@ main(int argc, char *argv[])
                          printf("pinning failed!\n");
                          goto cont;
                     }
-                    printf("PINNED VCPU %d of DOM %d to PCPU %d\n",0,VCPU_DOMMAP[i * numcpus + 0], busfree[1]);
+                    printf("PINNED VCPU %d of DOM %lu to PCPU %d\n",0,VCPU_DOMMAP[i * numcpus + 0], busfree[1]);
                     goto cont; //if busiest has more than 1 vcpu and freest has none, then no point in checking other conditions
                   }
                 }
@@ -488,7 +488,6 @@ main(int argc, char *argv[])
 
                   //REST OF ALGO
                   //else we just take smallest vcpu on busiest and switch it with smallest on freest?
-                  //this algo is mega eh and it's not good
 
                   unsigned char map = 0x1 << busfree[1]; //freest cpu
                   //pin freest cpu to freest vcpu on busiest cpu
