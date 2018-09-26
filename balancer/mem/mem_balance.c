@@ -146,10 +146,10 @@ unsigned int flags = VIR_DOMAIN_AFFECT_LIVE;
                 //unsigned int flags = VIR_DOMAIN_AFFECT_LIVE;
                 unsigned long long reclaimed = 0;
                 for (int i = 0; i < numDoms; i++) {
-                  unsigned long long memFree = DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + 8];
+                  unsigned long long memFree = DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + VIR_DOMAIN_MEMORY_STAT_USABLE];
                 //  printf("FREE: %llu\n", memFree/1024);
                   if ( memFree > THRESH_FREE) {
-                    unsigned long long avail = (unsigned long long)DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + 6]; //total available for domain +6
+                    unsigned long long avail = (unsigned long long)DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + VIR_DOMAIN_MEMORY_STAT_ACTUAL_BALLOON]; //total available for domain +6
                     //printf("AVAIL MEM FOR DOM %d, %llu mb\n", i, avail/1024);
                     //printf("%llu %llu\n", avail, memFree-THRESH_FREE);
                     printf("trying: %llu \n", avail-((memFree-THRESH_FREE)/factor));
@@ -173,7 +173,7 @@ unsigned int flags = VIR_DOMAIN_AFFECT_LIVE;
                 printf("reclaimed: %llu mb\n", reclaimed / 1024);
                 for (int i = 0; i < numDoms; i++) {
 
-                  unsigned long long memFree = DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + 8];
+                  unsigned long long memFree = DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + VIR_DOMAIN_MEMORY_STAT_USABLE];
 
 
                   if (memFree < THRESH_STARVE) {
@@ -182,7 +182,7 @@ unsigned int flags = VIR_DOMAIN_AFFECT_LIVE;
 
                   if (freeDoms[i] != 1 && memFree < THRESH_STARVE) {
 
-                    unsigned long long avail = (unsigned long long )DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + 6]; //+6
+                    unsigned long long avail = (unsigned long long )DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + VIR_DOMAIN_MEMORY_STAT_ACTUAL_BALLOON]; //+6
                     if (HOST_MEM_FREE < (THRESH_STARVE + reclaimed/starved) * starved) {
                       printf("not enough host memory to give!\n");
                       //return -1;
