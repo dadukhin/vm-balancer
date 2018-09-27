@@ -310,39 +310,7 @@ main(int argc, char *argv[])
 
 
         int i = 0;
-
-        /*unsigned char map = 0b100;
-
-           if(virDomainPinVcpu(doms[0], 0, &map, cpumaplen) == -1) {
-                printf("pinning failed!\n");
-           }
-         */
-
-        /*    for (i = 0; i < numDoms; i++) {
-                    int x = 0;
-
-                    unsigned int currentVcpus = record[i]->params[0].value.ui;
-                    for(x = 0; x <currentVcpus; x++) {
-                            printf("pinning %02x to vcpu %d\n", map, x);
-                            if(virDomainPinVcpu(doms[i], x, &map, cpumaplen) == -1) {
-                                    printf("pinning failed!\n");
-                            }
-
-
-
-                            map <<=0x1;
-                            if (map & (0x1 << (numcpus-1)) != 0) {
-                                    map=0x1;
-                            }
-                    }
-
-            }
-         */
-
-
-
-        //  getPCPU_TIME(numcpus, numDoms,doms, PCPU_PREV_TIME);
-
+        
         unsigned long long *PCPU_PREV_TIME = calloc(maxTotalVCPUS, sizeof(unsigned long long));
         unsigned long long *PCPU_CUR_TIME = calloc(maxTotalVCPUS, sizeof(unsigned long long));
 
