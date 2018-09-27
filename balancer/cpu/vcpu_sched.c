@@ -310,7 +310,8 @@ main(int argc, char *argv[])
 
 
         int i = 0;
-        
+
+
         unsigned long long *PCPU_PREV_TIME = calloc(maxTotalVCPUS, sizeof(unsigned long long));
         unsigned long long *PCPU_CUR_TIME = calloc(maxTotalVCPUS, sizeof(unsigned long long));
 
