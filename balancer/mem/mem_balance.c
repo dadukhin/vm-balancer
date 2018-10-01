@@ -118,11 +118,11 @@ int main(int argc, char *argv[])
         unsigned long long * DOMAIN_MEM_INFO = calloc(numDoms * VIR_DOMAIN_MEMORY_STAT_NR , sizeof(unsigned long long)); //13 stats in each struct
         unsigned long long HOST_MEM_FREE = getHostMemoryStats(conn);
 
-        unsigned long long THRESH_STARVE=100 * 1024;
-        unsigned long long THRESH_FREE=200 * 1024;
+        unsigned long long THRESH_STARVE=128 * 1024 * quantum;
+        unsigned long long THRESH_FREE=256 * 1024 /** quantum*/;
         unsigned long long factor = 2;
         unsigned long long factorGive = 1;
-unsigned int flags = VIR_DOMAIN_AFFECT_LIVE;
+        unsigned int flags = VIR_DOMAIN_AFFECT_LIVE;
 //virDomainSetMemoryFlags(doms[0], 985*1024-(THRESH_FREE), flags);
 
 
@@ -146,10 +146,10 @@ unsigned int flags = VIR_DOMAIN_AFFECT_LIVE;
                 //unsigned int flags = VIR_DOMAIN_AFFECT_LIVE;
                 unsigned long long reclaimed = 0;
                 for (int i = 0; i < numDoms; i++) {
-                  unsigned long long memFree = DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + VIR_DOMAIN_MEMORY_STAT_USABLE];
+                  unsigned long long memFree = DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + 8];
                 //  printf("FREE: %llu\n", memFree/1024);
                   if ( memFree > THRESH_FREE) {
-                    unsigned long long avail = (unsigned long long)DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + VIR_DOMAIN_MEMORY_STAT_ACTUAL_BALLOON]; //total available for domain +6
+                    unsigned long long avail = (unsigned long long)DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + 6]; //total available for domain +6
                     //printf("AVAIL MEM FOR DOM %d, %llu mb\n", i, avail/1024);
                     //printf("%llu %llu\n", avail, memFree-THRESH_FREE);
                     printf("trying: %llu \n", avail-((memFree-THRESH_FREE)/factor));
@@ -173,7 +173,7 @@ unsigned int flags = VIR_DOMAIN_AFFECT_LIVE;
                 printf("reclaimed: %llu mb\n", reclaimed / 1024);
                 for (int i = 0; i < numDoms; i++) {
 
-                  unsigned long long memFree = DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + VIR_DOMAIN_MEMORY_STAT_USABLE];
+                  unsigned long long memFree = DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + 8];
 
 
                   if (memFree < THRESH_STARVE) {
@@ -182,25 +182,28 @@ unsigned int flags = VIR_DOMAIN_AFFECT_LIVE;
 
                   if (freeDoms[i] != 1 && memFree < THRESH_STARVE) {
 
-                    unsigned long long avail = (unsigned long long )DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + VIR_DOMAIN_MEMORY_STAT_ACTUAL_BALLOON]; //+6
-                    if (HOST_MEM_FREE < (THRESH_STARVE + reclaimed/starved) * starved) {
+                    unsigned long long avail = (unsigned long long )DOMAIN_MEM_INFO[VIR_DOMAIN_MEMORY_STAT_NR * i + 6]; //+6
+                    if (HOST_MEM_FREE < (THRESH_STARVE)) { //HOST_MEM_FREE < (THRESH_STARVE + reclaimed/starved) * starved
+                      printf("memory needed from host this period: %llu\n", (THRESH_STARVE) * starved);
                       printf("not enough host memory to give!\n");
                       //return -1;
                       goto cont;
                     }
-
+                    //avail-THRESH_STARVE(150mb * quantum), avail-memfree+threshstarve
+                    //avail+thresh_starve*factorGive+reclaimed/starved
+                     //virDomainSetMaxMemory(doms[i], avail-memFree+THRESH_STARVE);
                     //printf("AVAIL MEM FOR DOM %d, %llu mb\n", i, avail/1024);
-                    if (avail+THRESH_STARVE*factorGive+reclaimed/starved > virDomainGetMaxMemory(doms[i])) {
+                    if (avail-memFree+THRESH_STARVE > virDomainGetMaxMemory(doms[i])) {
                       printf("waiting since cannot allocate more than vm max\n");
                       goto cont;
                     }
-                    int s = virDomainSetMemoryFlags(doms[i], avail+THRESH_STARVE*factorGive+reclaimed/starved, flags);
+                    int s = virDomainSetMemoryFlags(doms[i], avail-memFree+THRESH_STARVE, flags);
                     if (s==-1) {
-                      printf("failed to give domain %d, %llu mb\n",i, (THRESH_STARVE*factorGive+reclaimed/starved) /1024);
+                      printf("failed to give domain %d, %llu mb\n",i, (THRESH_STARVE) /1024);
                       return -1;
                     }
-                    printf("gave domain %d, %llu mb\n", i, (THRESH_STARVE*factorGive+reclaimed/starved) /1024);
-                    printf("new size %llu\n", avail+THRESH_STARVE*factorGive+reclaimed/starved);
+                    printf("gave domain %d, %llu mb\n", i, (THRESH_STARVE) /1024);
+                    printf("new size %llu\n", avail-memFree+THRESH_STARVE);
                   }
                 }
 
